@@ -13,7 +13,7 @@ export default function RootPage() {
     if (lastTeam) {
       router.replace(`/teams/${lastTeam}/websites`);
     } else {
-      router.replace(`/websites`);
+      router.replace(`/dashboard`);
     }
   }, [router]);
 
