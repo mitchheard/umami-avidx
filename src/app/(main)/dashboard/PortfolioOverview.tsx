@@ -61,7 +61,9 @@ function SiteTile({ name, color }: { name: string; color: string }) {
   );
 }
 
-function MiniBars({ values, max, color }: { values: number[]; max: number; color: string }) {
+function MiniBars({ values, color }: { values: number[]; color: string }) {
+  // Scaled to the row's own peak: the chart above compares sites, this shows each site's shape
+  const max = Math.max(0, ...values);
   const width = 120;
   const height = 32;
 
@@ -88,7 +90,7 @@ function MiniBars({ values, max, color }: { values: number[]; max: number; color
     <svg width={width} height={height} aria-hidden="true">
       {values.map((v, i) => {
         if (!v) return null;
-        // Keep the smallest non-zero values visible on the shared scale
+        // Keep the smallest non-zero values visible
         const h = Math.max((v / max) * height, 2);
 
         return (
@@ -231,12 +233,6 @@ export function PortfolioOverview({ showDateFilter = true }: { showDateFilter?: 
 
   const prevVisits = stats.reduce((n, q) => n + (q.data?.comparison?.visits ?? 0), 0);
   const prevPageviews = stats.reduce((n, q) => n + (q.data?.comparison?.pageviews ?? 0), 0);
-
-  // One scale for every row's bars, so a tall bar means the same thing on each site
-  const maxBucket = useMemo(
-    () => Math.max(0, ...rows.flatMap(row => row.series.map(({ y }) => y ?? 0))),
-    [rows],
-  );
 
   const chartData: any = useMemo(() => {
     const activeRows = rows.filter(row => row.pageviews > 0);
@@ -394,11 +390,7 @@ export function PortfolioOverview({ showDateFilter = true }: { showDateFilter?: 
                           </Text>
                         </Column>
                       </Row>
-                      <MiniBars
-                        values={row.series.map(({ y }) => y ?? 0)}
-                        max={maxBucket}
-                        color={row.color}
-                      />
+                      <MiniBars values={row.series.map(({ y }) => y ?? 0)} color={row.color} />
                       <Row alignItems="center" justifyContent="flex-end" gap="3">
                         {showChange && !row.isLoading && isNew && (
                           <Text size="sm" color="muted" wrap="nowrap">
