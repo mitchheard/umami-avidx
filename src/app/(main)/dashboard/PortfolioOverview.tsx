@@ -147,6 +147,12 @@ function SortHeader({
   onClick: () => void;
   children: ReactNode;
 }) {
+  const arrow = active && (
+    <span aria-hidden="true" style={{ fontSize: 11 }}>
+      {desc ? '↓' : '↑'}
+    </span>
+  );
+
   return (
     <button
       type="button"
@@ -166,10 +172,10 @@ function SortHeader({
         whiteSpace: 'nowrap',
       }}
     >
+      {/* Right-aligned headers put the arrow first so the label stays flush with the numbers below */}
+      {align === 'right' && arrow}
       {children}
-      <span aria-hidden="true" style={{ width: 8, fontSize: 11 }}>
-        {active ? (desc ? '↓' : '↑') : ''}
-      </span>
+      {align === 'left' && arrow}
     </button>
   );
 }
