@@ -2,15 +2,19 @@
 import { useQueries } from '@tanstack/react-query';
 import { Column, Grid, Heading, Row, StatusLight, Text } from '@umami/react-zen';
 import { colord } from 'colord';
-import { useCallback, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart } from '@/components/charts/BarChart';
 import { Empty } from '@/components/common/Empty';
+import { Favicon } from '@/components/common/Favicon';
 import Link from '@/components/common/Link';
 import { LoadingPanel } from '@/components/common/LoadingPanel';
+import { TypeIcon } from '@/components/common/TypeIcon';
 import {
   useApi,
   useDateParameters,
   useDateRange,
+  useFormat,
   useLocale,
   useMessages,
   useNavigation,
@@ -19,6 +23,7 @@ import type { WebsitePageviewsData } from '@/components/hooks/queries/useWebsite
 import type { WebsiteStatsData } from '@/components/hooks/queries/useWebsiteStatsQuery';
 import { WebsiteDateFilter } from '@/components/input/WebsiteDateFilter';
 import { ChangeLabel } from '@/components/metrics/ChangeLabel';
+import { ListTable } from '@/components/metrics/ListTable';
 import { MetricCard } from '@/components/metrics/MetricCard';
 import { MetricsBar } from '@/components/metrics/MetricsBar';
 import { renderDateLabels } from '@/lib/charts';
@@ -31,6 +36,13 @@ const ACTIVE_REFETCH_INTERVAL = 60000;
 const ROW_COLUMNS = 'minmax(180px, 2fr) 140px repeat(5, minmax(64px, 1fr))';
 // Below this many visitors in both periods a percentage change is just noise
 const MIN_VISITORS_FOR_CHANGE = 3;
+// A few visitors per site per day is mostly noise, so this page opens on a week
+const DEFAULT_DATE_RANGE = '7day';
+const SOURCE_TYPES = ['referrer', 'country'] as const;
+const SOURCE_FETCH_LIMIT = 20;
+const SOURCE_ROWS = 8;
+
+type SortKey = 'name' | 'visitors' | 'visits' | 'pageviews' | 'bounceRate' | 'duration';
 
 interface Website {
   id: string;
@@ -122,6 +134,46 @@ function Cell({ children, muted }: { children: string; muted?: boolean }) {
   );
 }
 
+function SortHeader({
+  active,
+  desc,
+  align = 'right',
+  onClick,
+  children,
+}: {
+  active: boolean;
+  desc: boolean;
+  align?: 'left' | 'right';
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-sort={active ? (desc ? 'descending' : 'ascending') : undefined}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+        gap: 4,
+        padding: 0,
+        border: 0,
+        background: 'none',
+        color: active ? 'inherit' : 'var(--text-muted)',
+        font: 'inherit',
+        cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {children}
+      <span aria-hidden="true" style={{ width: 8, fontSize: 11 }}>
+        {active ? (desc ? '↓' : '↑') : ''}
+      </span>
+    </button>
+  );
+}
+
 function OnlineCard({ label, value }: { label: string; value: number }) {
   return (
     <Column
@@ -146,11 +198,16 @@ function OnlineCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-export function PortfolioOverview({ showDateFilter = true }: { showDateFilter?: boolean }) {
+function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: boolean }) {
   const { get, useQuery } = useApi();
   const { t, labels } = useMessages();
   const { locale } = useLocale();
+  const { formatValue } = useFormat();
   const { renderUrl } = useNavigation();
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({
+    key: 'visitors',
+    desc: true,
+  });
   const { dateRange, isAllTime } = useDateRange();
   const { startAt, endAt, unit, timezone } = useDateParameters();
 
@@ -233,6 +290,68 @@ export function PortfolioOverview({ showDateFilter = true }: { showDateFilter?: 
 
   const prevVisits = stats.reduce((n, q) => n + (q.data?.comparison?.visits ?? 0), 0);
   const prevPageviews = stats.reduce((n, q) => n + (q.data?.comparison?.pageviews ?? 0), 0);
+
+  // Only ask for sources from sites that had traffic in the period
+  const metrics = useQueries({
+    queries: (websites ?? []).flatMap(({ id }, i) =>
+      SOURCE_TYPES.map(type => ({
+        queryKey: [
+          'websites:metrics',
+          { websiteId: id, type, startAt, endAt, limit: SOURCE_FETCH_LIMIT },
+        ],
+        queryFn: (): Promise<{ x: string; y: number }[]> =>
+          get(`/websites/${id}/metrics`, { type, startAt, endAt, limit: SOURCE_FETCH_LIMIT }),
+        enabled: (stats[i]?.data?.visits ?? 0) > 0,
+      })),
+    ),
+  });
+  const metricsKey = metrics.map(q => q.dataUpdatedAt).join();
+
+  const sources = useMemo(() => {
+    const byType = SOURCE_TYPES.map(() => new Map<string, number>());
+
+    metrics.forEach((q, i) => {
+      const counts = byType[i % SOURCE_TYPES.length];
+
+      for (const { x, y } of q.data ?? []) {
+        counts.set(x ?? '', (counts.get(x ?? '') ?? 0) + y);
+      }
+    });
+
+    const [referrer, country] = byType.map(counts => {
+      const total = [...counts.values()].reduce((n, y) => n + y, 0);
+
+      return [...counts]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, SOURCE_ROWS)
+        .map(([label, count]) => ({ label, count, percent: total ? (count / total) * 100 : 0 }));
+    });
+
+    return { referrer, country };
+  }, [metricsKey]);
+
+  // Sites with no visits stay at the bottom whichever column is sorted
+  const tableRows = useMemo(() => {
+    return [...rows].sort((a, b) => {
+      const aEmpty = a.visits === 0;
+      const bEmpty = b.visits === 0;
+
+      if (aEmpty !== bEmpty) {
+        return aEmpty ? 1 : -1;
+      }
+
+      const diff = sort.key === 'name' ? a.name.localeCompare(b.name) : a[sort.key] - b[sort.key];
+
+      return (sort.desc ? -diff : diff) || b.visitors - a.visitors;
+    });
+  }, [rows, sort]);
+
+  const handleSort = (key: SortKey) => {
+    // Names start A to Z, numbers start largest first; clicking again flips
+    setSort(current =>
+      current.key === key ? { key, desc: !current.desc } : { key, desc: key !== 'name' },
+    );
+  };
 
   const chartData: any = useMemo(() => {
     const activeRows = rows.filter(row => row.pageviews > 0);
@@ -325,28 +444,37 @@ export function PortfolioOverview({ showDateFilter = true }: { showDateFilter?: 
           <Column border borderRadius backgroundColor="surface-base" style={{ overflowX: 'auto' }}>
             <Column style={{ minWidth: 820 }}>
               <Grid columns={ROW_COLUMNS} gap="4" paddingX="6" paddingY="4" alignItems="center">
-                <Heading size="lg">{t(labels.websites)}</Heading>
+                <SortHeader
+                  align="left"
+                  active={sort.key === 'name'}
+                  desc={sort.desc}
+                  onClick={() => handleSort('name')}
+                >
+                  <Heading size="lg">{t(labels.websites)}</Heading>
+                </SortHeader>
                 <span />
-                {[
-                  labels.visitors,
-                  labels.visits,
-                  labels.views,
-                  labels.bounceRate,
-                  labels.visitDuration,
-                ].map(label => (
-                  <Text
-                    key={label}
-                    size="sm"
-                    color="muted"
-                    weight="bold"
-                    wrap="nowrap"
-                    style={{ textAlign: 'right' }}
+                {(
+                  [
+                    ['visitors', labels.visitors],
+                    ['visits', labels.visits],
+                    ['pageviews', labels.views],
+                    ['bounceRate', labels.bounceRate],
+                    ['duration', labels.visitDuration],
+                  ] as [SortKey, string][]
+                ).map(([key, label]) => (
+                  <SortHeader
+                    key={key}
+                    active={sort.key === key}
+                    desc={sort.desc}
+                    onClick={() => handleSort(key)}
                   >
-                    {t(label)}
-                  </Text>
+                    <Text size="sm" weight="bold" wrap="nowrap">
+                      {t(label)}
+                    </Text>
+                  </SortHeader>
                 ))}
               </Grid>
-              {rows.map(row => {
+              {tableRows.map(row => {
                 const change = row.visitors - row.prevVisitors;
                 const isEmpty = !row.isLoading && row.visits === 0;
                 const isNew = row.prevVisitors === 0 && row.visitors > 0;
@@ -422,8 +550,55 @@ export function PortfolioOverview({ showDateFilter = true }: { showDateFilter?: 
               })}
             </Column>
           </Column>
+
+          <Grid columns={{ base: '1fr', md: '1fr 1fr' }} gap="6">
+            <Column border borderRadius backgroundColor="surface-base" paddingX="6" paddingY="4">
+              <ListTable
+                title={t(labels.referrers)}
+                metric={t(labels.visitors)}
+                data={sources.referrer}
+                renderLabel={({ label }) => (
+                  <Row alignItems="center" gap="3">
+                    <Favicon domain={label} />
+                    {label || t(labels.none)}
+                  </Row>
+                )}
+              />
+            </Column>
+            <Column border borderRadius backgroundColor="surface-base" paddingX="6" paddingY="4">
+              <ListTable
+                title={t(labels.countries)}
+                metric={t(labels.visitors)}
+                data={sources.country}
+                renderLabel={({ label }) => (
+                  <TypeIcon type="country" value={label}>
+                    {formatValue(label, 'country')}
+                  </TypeIcon>
+                )}
+              />
+            </Column>
+          </Grid>
         </Column>
       </LoadingPanel>
     </Column>
   );
+}
+
+export function PortfolioOverview(props: { showDateFilter?: boolean }) {
+  const searchParams = useSearchParams();
+  const { router, updateParams } = useNavigation();
+  const hasDate = !!searchParams.get('date');
+
+  useEffect(() => {
+    if (!hasDate) {
+      router.replace(updateParams({ date: DEFAULT_DATE_RANGE }));
+    }
+  }, [hasDate, router, updateParams]);
+
+  // Wait for the default range to land in the URL so data isn't fetched twice
+  if (!hasDate) {
+    return null;
+  }
+
+  return <PortfolioOverviewContent {...props} />;
 }
