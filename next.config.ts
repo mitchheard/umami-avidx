@@ -198,6 +198,10 @@ export default withNextIntl({
   },
   basePath,
   output: 'standalone',
+  experimental: {
+    // Limit build workers so `next build` fits in Render's build memory.
+    cpus: 2,
+  },
   typescript: {
     ignoreBuildErrors: true,
   },
