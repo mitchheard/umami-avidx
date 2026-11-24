@@ -87,7 +87,7 @@ function MiniBars({ values, color }: { values: number[]; color: string }) {
           x2={width}
           y1={height - 1}
           y2={height - 1}
-          stroke="var(--text-muted)"
+          stroke="var(--zen-fg-muted)"
           strokeOpacity={0.4}
           strokeDasharray="2 3"
         />
@@ -166,7 +166,7 @@ function SortHeader({
         padding: 0,
         border: 0,
         background: 'none',
-        color: active ? 'inherit' : 'var(--text-muted)',
+        color: active ? 'inherit' : 'var(--zen-fg-muted)',
         font: 'inherit',
         cursor: 'pointer',
         whiteSpace: 'nowrap',
@@ -187,7 +187,7 @@ function OnlineCard({ label, value }: { label: string; value: number }) {
       paddingX="6"
       paddingY="4"
       borderRadius
-      backgroundColor="surface-base"
+      backgroundColor="surface"
       border
       gap="4"
     >
@@ -401,7 +401,7 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
         minHeight="300px"
       >
         <Column gap="6">
-          <MetricsBar>
+          <MetricsBar joined={false}>
             <MetricCard
               label={t(labels.visitors)}
               value={totals.visitors}
@@ -426,14 +426,7 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
             <OnlineCard label={t(labels.online)} value={totals.online} />
           </MetricsBar>
 
-          <Column
-            border
-            borderRadius
-            backgroundColor="surface-base"
-            paddingX="6"
-            paddingY="4"
-            gap="4"
-          >
+          <Column border borderRadius backgroundColor="surface" paddingX="6" paddingY="4" gap="4">
             <Heading size="lg">{t(labels.views)}</Heading>
             <BarChart
               key={dateRange.value}
@@ -447,7 +440,7 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
             />
           </Column>
 
-          <Column border borderRadius backgroundColor="surface-base" style={{ overflowX: 'auto' }}>
+          <Column border borderRadius backgroundColor="surface" style={{ overflowX: 'auto' }}>
             <Column style={{ minWidth: 820 }}>
               <Grid columns={ROW_COLUMNS} gap="4" paddingX="6" paddingY="4" alignItems="center">
                 <SortHeader
@@ -558,7 +551,7 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
           </Column>
 
           <Grid columns={{ base: '1fr', md: '1fr 1fr' }} gap="6">
-            <Column border borderRadius backgroundColor="surface-base" paddingX="6" paddingY="4">
+            <Column border borderRadius backgroundColor="surface" paddingX="6" paddingY="4">
               <ListTable
                 title={t(labels.referrers)}
                 metric={t(labels.visitors)}
@@ -571,7 +564,7 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
                 )}
               />
             </Column>
-            <Column border borderRadius backgroundColor="surface-base" paddingX="6" paddingY="4">
+            <Column border borderRadius backgroundColor="surface" paddingX="6" paddingY="4">
               <ListTable
                 title={t(labels.countries)}
                 metric={t(labels.visitors)}
