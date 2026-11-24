@@ -92,9 +92,14 @@ export function SideNav(props: any) {
       >
         <Row paddingX="3" alignItems="center" justifyContent="space-between" flexGrow="1">
           {!isCollapsed && (
-            <IconLabel icon={<Logo />}>
-              <Text weight="bold">umami</Text>
-            </IconLabel>
+            <Link
+              href={teamId ? renderUrl('/websites', false) : '/dashboard'}
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              <IconLabel icon={<Logo />}>
+                <Text weight="bold">umami</Text>
+              </IconLabel>
+            </Link>
           )}
           <PanelButton />
         </Row>
