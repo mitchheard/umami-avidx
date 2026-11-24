@@ -41,6 +41,10 @@ const DEFAULT_DATE_RANGE = '7day';
 const SOURCE_TYPES = ['referrer', 'country'] as const;
 const SOURCE_FETCH_LIMIT = 20;
 const SOURCE_ROWS = 8;
+// Marks the estimated direct-traffic row in the referrers table
+const DIRECT = '(direct)';
+// Hosts people return from after signing in, e.g. accounts.google.com
+const SIGN_IN_REFERRER = /^(accounts|login|signin|auth|sso|appleid)\./i;
 
 type SortKey = 'name' | 'visitors' | 'visits' | 'pageviews' | 'bounceRate' | 'duration';
 
@@ -314,17 +318,39 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
   const metricsKey = metrics.map(q => q.dataUpdatedAt).join();
 
   const sources = useMemo(() => {
-    const byType = SOURCE_TYPES.map(() => new Map<string, number>());
+    const referrers = new Map<string, number>();
+    const countries = new Map<string, number>();
+    let direct = 0;
 
-    metrics.forEach((q, i) => {
-      const counts = byType[i % SOURCE_TYPES.length];
+    (websites ?? []).forEach((_, site) => {
+      const [referrerQuery, countryQuery] = SOURCE_TYPES.map(
+        (_type, t) => metrics[site * SOURCE_TYPES.length + t],
+      );
+      let referred = 0;
 
-      for (const { x, y } of q.data ?? []) {
-        counts.set(x ?? '', (counts.get(x ?? '') ?? 0) + y);
+      for (const { x, y } of referrerQuery?.data ?? []) {
+        // Empty referrers and returns from a login page are not places that sent traffic
+        if (!x || SIGN_IN_REFERRER.test(x)) continue;
+
+        referrers.set(x, (referrers.get(x) ?? 0) + y);
+        referred += y;
+      }
+
+      for (const { x, y } of countryQuery?.data ?? []) {
+        countries.set(x ?? '', (countries.get(x ?? '') ?? 0) + y);
+      }
+
+      // Umami doesn't report direct traffic, so estimate it as whoever is left over
+      if (referrerQuery?.data) {
+        direct += Math.max((stats[site]?.data?.visitors ?? 0) - referred, 0);
       }
     });
 
-    const [referrer, country] = byType.map(counts => {
+    if (direct > 0) {
+      referrers.set(DIRECT, direct);
+    }
+
+    const [referrer, country] = [referrers, countries].map(counts => {
       const total = [...counts.values()].reduce((n, y) => n + y, 0);
 
       return [...counts]
@@ -334,7 +360,7 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
     });
 
     return { referrer, country };
-  }, [metricsKey]);
+  }, [websites, metricsKey, statsKey]);
 
   // Sites with no visits stay at the bottom whichever column is sorted
   const tableRows = useMemo(() => {
@@ -558,8 +584,8 @@ function PortfolioOverviewContent({ showDateFilter = true }: { showDateFilter?: 
                 data={sources.referrer}
                 renderLabel={({ label }) => (
                   <Row alignItems="center" gap="3">
-                    <Favicon domain={label} />
-                    {label || t(labels.none)}
+                    {label !== DIRECT && <Favicon domain={label} />}
+                    {label === DIRECT ? t(labels.direct) : label}
                   </Row>
                 )}
               />
